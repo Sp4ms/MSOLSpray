@@ -24,7 +24,7 @@ pip3 install requests
 
 You will need a userlist file with target email-addresses one per line. 
 ```
-usage: MSOLSpray.py [-h] -u FILE -p PASSWORD [-o OUTFILE] [-f] [--url URL]
+usage: MSOLSpray.py [-h] -u FILE [--credstuff FILE] [--useraspass] -p PASSWORD [-o OUTFILE_PREFIX] [-f] [-v] [-s SECONDS] [--url URL]
 
 This is a pure Python rewrite of dafthack's MSOLSpray (https://github.com/dafthack/MSOLSpray/) which is written in PowerShell. All credit goes to him!
 
@@ -38,8 +38,12 @@ optional arguments:
   -p PASSWORD, --password PASSWORD
                         A single password that will be used to perform the
                         password spray. (Required)
-  -o OUTFILE, --out OUTFILE
-                        A file to output valid results to.
+  --credstuff FILE
+                        File filled with username\\tpassword per line (\\t describes Tab separated). Username format 'user@domain.com'.
+  --useraspass
+                        Pulling from the provided username list, using the username as the password. NOTE: -u (--userlist) required with this flag.
+  -o OUTFILE_PREFIX, --out OUTFILE_PREFIX
+                        The prefix for the output files' naming convention. Three files will be produced (if applicable). For the example -o EXAMPLE --- EXAMPLE_successes.txt, EXAMPLE_valid_usernames.txt, EXAMPLE_locked_accounts.txt
   -f, --force           Forces the spray to continue and not stop when
                         multiple account lockouts are detected.
   --url URL             The URL to spray against (default is
@@ -47,11 +51,26 @@ optional arguments:
                         pointing at an API Gateway URL generated with
                         something like FireProx to randomize the IP address
                         you are authenticating from.
+  -v, --verbose
+                        Prints usernames that could exist in case of invalid password
+  -s, --sleep NUMBER_OF_SECONDS
+                        Sleep this many seconds between tries
 
 EXAMPLE USAGE:
 This command will use the provided userlist and attempt to authenticate to each account with a password of Winter2020.
     python3 MSOLSpray.py --userlist ./userlist.txt --password Winter2020
 
 This command uses the specified FireProx URL to spray from randomized IP addresses and writes the output to a file. See this for FireProx setup: https://github.com/ustayready/fireprox.
-    python3 MSOLSpray.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out valid-users.txt
+    python3 MSOLSpray.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1
+
+This command uses the specified FireProx URL, but with the username as the password.
+    python3 MSOLSpray.py --userlist ./userlist.txt --useraspass --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1    
+
+This command uses the specified FireProx URL, but does Credential Stuffing using an input file with username\\tpassword per line (\\t describes Tab separated).
+    python3 MSOLSpray.py --credstuff ./credlist.txt --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1 
 ```
+### TODO LIST
+TODO LIST:
+    - Rotating useragents
+    - Set useragent flag
+    - Provide FireProx URLs txt file to use multiple FireProx links
