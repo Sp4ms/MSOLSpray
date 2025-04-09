@@ -71,8 +71,8 @@ This command uses the specified FireProx URL, but does Credential Stuffing using
 ```
 ### TODO LIST
 TODO LIST:
-    - Rotating useragents
-
-    - Set useragent flag
-    
-    - Provide FireProx URLs txt file to use multiple FireProx links
+<ul>
+    <li>Rotating useragents</li>
+    <li>Set useragent flag</li>
+    <li>Provide FireProx URLs txt file to use multiple FireProx links</li>
+</ul>
