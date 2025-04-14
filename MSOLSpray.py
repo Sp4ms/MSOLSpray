@@ -353,12 +353,13 @@ else:
 url = args.url
 force = args.force
 
-if args.out != "":
-    index = args.out.find('.')
+if args.out != None:
+    out = args.out
+    index = out.find('.')
     if index != -1:
-        out_prefix = args.out[:index]
+        out_prefix = out[:index]
     else:
-        out_prefix = args.out
+        out_prefix = out
 
 verbose = args.verbose
 sleep = args.sleep
